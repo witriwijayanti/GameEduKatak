@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Game Katak Interaktif - IPAS Kelas 5</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --water-color: #3b82f6;
+            --sky-color: #87CEEB;
+            --sky-dark: #4a5568;
+            --leaf-color: #4ade80;
+        }
+
+        body {
+            font-family: 'Fredoka', sans-serif;
+            margin: 0;
+            overflow: hidden;
+            background-color: #1a202c;
+            touch-action: manipulation; /* Prevent zoom on double tap */
+        }
+
+        /* UI Overlays */
+        #game-ui { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; flex-direction: column; }
+        .top-bar { z-index: 50; background: rgba(255, 255, 255, 0.9); box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+
+        /* Split Screen Grids */
+        .split-container { display: grid; width: 100%; height: 100%; flex-grow: 1; transition: all 0.5s ease; }
+        .solo-mode { grid-template-columns: 1fr; }
+        .duel-mode { grid-template-columns: 1fr 1fr; }
+        .triple-mode { grid-template-columns: 1fr 1fr 1fr; }
+
+        /* Responsif HP Potret (Tumpuk vertikal/horizontal) */
+        @media (max-width: 768px) and (orientation: portrait) {
+            .duel-mode { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+            .triple-mode { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr 1fr; }
+            .question-text { font-size: 0.9rem !important; }
+            .option-text { font-size: 0.8rem !important; }
+        }
+
+        /* Player Board */
+        .player-board {
+            position: relative;
+            border: 2px solid #2d3748;
+            background: linear-gradient(to bottom, var(--sky-color) 0%, #e0f6ff 80%);
+            overflow: hidden;
+            transition: background 1s ease;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .player-board.rainy { background: linear-gradient(to bottom, var(--sky-dark) 0%, #718096 80%); }
+
+        /* Weather / Rain Effect */
+        .rain {
+            position: absolute; width: 100%; height: 100%; top: 0; left: 0; pointer-events: none; opacity: 0; transition: opacity 0.5s; z-index: 10;
+            background-image: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0.4) 50%, rgba(255,255,255,0) 100%);
+            background-size: 2px 20px;
+            animation: rainDrop 0.3s linear infinite;
+        }
+        .player-board.rainy .rain { opacity: 1; }
+        @keyframes rainDrop { 0% { background-position: 0 0; } 100% { background-position: 20px 100vh; } }
+
+        /* Water / Pond */
+        .water-area {
+            position: absolute; bottom: 0; width: 100%; height: 15%; background: var(--water-color);
+            border-top: 4px solid #2563eb; z-index: 5; transition: height 0.3s;
+        }
+        .water-wave {
+            position: absolute; top: -10px; width: 100%; height: 20px;
+            background: radial-gradient(circle at 10px 10px, transparent 12px, var(--water-color) 13px);
+            background-size: 20px 20px;
+        }
+        .ripple { position: absolute; width: 50px; height: 10px; border: 2px solid white; border-radius: 50%; top: -5px; left: 50%; transform: translateX(-50%) scale(0); opacity: 1; pointer-events: none; }
+        .do-ripple { animation: rippleAnim 1s ease-out; }
+        @keyframes rippleAnim { to { transform: translateX(-50%) scale(3); opacity: 0; } }
+
+        /* Leaves */
+        .leaf-shape {
+            background: linear-gradient(135deg, #4ade80, #16a34a);
+            border-radius: 50% 0 50% 0;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3), inset 2px 2px 5px rgba(255,255,255,0.5);
+            position: relative;
+            display: flex; justify-content: center; align-items: center;
+            cursor: pointer; transition: transform 0.1s;
+        }
+        .leaf-shape:active { transform: scale(0.95); }
+        .leaf-base { width: 100px; height: 40px; margin: 0 auto; position: absolute; bottom: 12%; left: 50%; transform: translateX(-50%); z-index: 6; }
+        
+        .options-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 15px; width: 90%; max-width: 400px; margin: auto; position: absolute; top: 40%; left: 50%; transform: translateX(-50%); z-index: 20;
+        }
+        .option-leaf { width: 100%; padding: 15px 10px; min-height: 60px; text-align: center; font-weight: bold; color: white; text-shadow: 1px 1px 2px black; word-wrap: break-word;}
+
+        /* Frog */
+        .frog {
+            font-size: 3rem; position: absolute; bottom: 18%; left: 50%; transform: translateX(-50%);
+            z-index: 25; transition: all 0.5s ease-in-out; filter: drop-shadow(0 5px 5px rgba(0,0,0,0.5));
+        }
+        
+        /* Animations */
+        .jump-up { animation: jumpAnim 0.5s forwards; }
+        @keyframes jumpAnim { 0% { bottom: 18%; transform: translateX(-50%) scale(1); } 50% { bottom: 60%; transform: translateX(-50%) scale(1.2); } 100% { bottom: 45%; transform: translateX(-50%) scale(1); } }
+        
+        .fall-down { animation: fallAnim 1s forwards; }
+        @keyframes fallAnim { 0% { bottom: 18%; } 40% { bottom: 25%; } 100% { bottom: 5%; transform: translateX(-50%) rotate(180deg); opacity: 0; } }
+
+        .slide-down-screen { animation: slideDown 1s forwards; }
+        @keyframes slideDown { 0% { transform: translateY(0); } 100% { transform: translateY(100vh); opacity: 0; } }
+
+        .fade-in { animation: fadeIn 0.5s forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Particles */
+        .particle { position: absolute; pointer-events: none; z-index: 30; font-size: 1.5rem; animation: floatUp 1.5s forwards; }
+        @keyframes floatUp { 0% { opacity: 1; transform: translateY(0) scale(1); } 100% { opacity: 0; transform: translateY(-100px) scale(1.5); } }
+
+        /* UI Elements */
+        .glass-panel { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(4px); border-radius: 12px; border: 2px solid white; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .message-box { position: absolute; top: 15%; left: 50%; transform: translateX(-50%); width: 80%; z-index: 40; text-align: center; display: none; }
+        
+        /* Menu Buttons */
+        .btn-mode { transition: all 0.2s; }
+        .btn-mode:hover { transform: translateY(-3px) scale(1.05); }
+        .btn-mode:active { transform: translateY(1px); }
+
+    </style>
+</head>
+<body>
+
+    <!-- Main Menu -->
+    <div id="main-menu" class="h-screen w-screen flex flex-col items-center justify-center relative overflow-hidden bg-gradient-to-b from-blue-400 to-green-400">
+        <!-- Decoration -->
+        <div class="absolute top-10 left-10 text-6xl opacity-50">☁️</div>
+        <div class="absolute top-20 right-20 text-6xl opacity-50">☀️</div>
+        <div class="absolute bottom-10 left-20 text-6xl">🌿</div>
+        <div class="absolute bottom-10 right-20 text-8xl">🐸</div>
+
+        <div class="glass-panel p-8 md:p-12 text-center max-w-2xl w-11/12 relative z-10">
+            <h1 class="text-4xl md:text-5xl font-bold text-green-700 mb-2 drop-shadow-md">Katak Lompat Edukatif</h1>
+            <h2 class="text-xl md:text-2xl text-blue-600 font-semibold mb-6">Materi IPAS: Ekosistem (Kelas 5 SD)</h2>
+            <p class="text-gray-600 mb-8 italic">Oleh: Witri Wijayanti</p>
+
+            <div class="space-y-4">
+                <p class="font-bold text-gray-700 text-lg mb-4">Pilih Mode Bermain:</p>
+                <div class="flex flex-col md:flex-row justify-center gap-4">
+                    <button onclick="startGame(1)" class="btn-mode bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-8 rounded-full text-xl shadow-lg border-b-4 border-green-700 flex items-center justify-center gap-2">
+                        <span>👤</span> Solo
+                    </button>
+                    <button onclick="startGame(2)" class="btn-mode bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-8 rounded-full text-xl shadow-lg border-b-4 border-blue-700 flex items-center justify-center gap-2">
+                        <span>👥</span> Duel
+                    </button>
+                    <button onclick="startGame(3)" class="btn-mode bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-8 rounded-full text-xl shadow-lg border-b-4 border-purple-700 flex items-center justify-center gap-2">
+                        <span>👨‍👩‍👧</span> Triple
+                    </button>
+                </div>
+            </div>
+            
+            <div class="mt-8 text-sm text-gray-500">
+                Cara main: Jawab pertanyaan dengan mengklik daun yang benar. Katak akan melompat bahagia jika benar, dan tercebur jika salah!
+            </div>
+        </div>
+    </div>
+
+    <!-- Game UI -->
+    <div id="game-ui">
+        <!-- Top Control Bar -->
+        <div class="top-bar flex justify-between items-center px-4 py-2">
+            <button onclick="goHome()" class="bg-red-500 text-white p-2 rounded-full shadow hover:bg-red-600 font-bold px-4">🏠 Home</button>
+            <div class="text-xl font-bold text-gray-700">Level IPAS</div>
+            <div class="flex gap-2">
+                <button onclick="toggleAudio()" id="btn-audio" class="bg-blue-500 text-white p-2 rounded-full shadow hover:bg-blue-600 w-10 h-10 flex items-center justify-center">🔊</button>
+                <button onclick="toggleFullScreen()" class="bg-gray-700 text-white p-2 rounded-full shadow hover:bg-gray-800 w-10 h-10 flex items-center justify-center">🔲</button>
+            </div>
+        </div>
+
+        <!-- Split Screen Container -->
+        <div id="split-container" class="split-container">
+            <!-- Player screens injected here -->
+        </div>
+    </div>
+
+<script>
+// --- DATA SOAL ---
+const questionsData = [
+    {
+        q: "Semua makhluk hidup dan benda tak hidup yang saling berinteraksi disebut ....",
+        opts: ["A. Populasi", "B. Komunitas", "C. Ekosistem", "D. Habitat"],
+        ans: 2, msg: "Hebat! Katakmu menemukan ekosistem yang sehat."
+    },
+    {
+        q: "Rumput → Kelinci → Ular → Elang\nKelinci berperan sebagai ....",
+        opts: ["A. Produsen", "B. Konsumen I", "C. Konsumen II", "D. Pengurai"],
+        ans: 1, msg: "Lompatan super!"
+    },
+    {
+        q: "Sumber energi utama bagi kehidupan di bumi adalah ....",
+        opts: ["A. Air", "B. Angin", "C. Matahari", "D. Tanah"],
+        ans: 2, msg: "Katak memperoleh energi matahari!"
+    },
+    {
+        q: "Makhluk hidup yang dapat membuat makanan sendiri disebut ....",
+        opts: ["A. Konsumen", "B. Pengurai", "C. Produsen", "D. Predator"],
+        ans: 2, msg: "Katak mendapatkan daun energi."
+    },
+    {
+        q: "Berikut yang termasuk upaya menjaga lingkungan adalah ....",
+        opts: ["A. Buang sampah ke sungai", "B. Tebang pohon sembarang", "C. Bakar sampah plastik", "D. Menanam pohon"],
+        ans: 3, msg: "Katak menanam bibit pohon!"
+    },
+    {
+        q: "Hewan yang memakan tumbuhan disebut ....",
+        opts: ["A. Karnivora", "B. Herbivora", "C. Omnivora", "D. Predator"],
+        ans: 1, msg: "Katak bertemu ulat pemakan daun."
+    },
+    {
+        q: "Air hujan yang turun ke bumi merupakan bagian dari ....",
+        opts: ["A. Daur hidup", "B. Daur air", "C. Daur makanan", "D. Daur energi"],
+        ans: 1, msg: "Katak mendapat percikan air segar."
+    },
+    {
+        q: "Jika jumlah ular berkurang, kemungkinan yang terjadi adalah ....",
+        opts: ["A. Kelinci bertambah", "B. Kelinci berkurang", "C. Rumput habis", "D. Elang bertambah"],
+        ans: 0, msg: "Lompatan cerdas!"
+    },
+    {
+        q: "Salah satu penyebab pemanasan global adalah ....",
+        opts: ["A. Menanam pohon", "B. Menghemat listrik", "C. Emisi kendaraan", "D. Daur ulang sampah"],
+        ans: 2, msg: "Katak berhasil menghindari daerah panas."
+    },
+    {
+        q: "Organisme yang bertugas menguraikan sisa makhluk hidup adalah ....",
+        opts: ["A. Produsen", "B. Konsumen", "C. Predator", "D. Pengurai"],
+        ans: 3, msg: "SELAMAT! Katak berhasil mencapai kolam kehidupan!"
+    }
+];
+
+// --- STATE MANAGEMENT ---
+let players = [];
+let isAudioOn = true;
+let audioCtx;
+
+// --- AUDIO SYSTEM (Web Audio API - No external files needed) ---
+function initAudio() {
+    if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+}
+
+function playTone(freq, type, duration, slideFreq = null) {
+    if (!isAudioOn) return;
+    if (!audioCtx) initAudio();
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+    
+    const osc = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+    
+    osc.type = type;
+    osc.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    if(slideFreq) {
+        osc.frequency.exponentialRampToValueAtTime(slideFreq, audioCtx.currentTime + duration);
+    }
+    
+    gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+    
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+}
+
+function playSoundJump() { playTone(300, 'sine', 0.3, 600); }
+function playSoundSuccess() {
+    playTone(400, 'triangle', 0.1);
+    setTimeout(() => playTone(600, 'triangle', 0.2), 100);
+    setTimeout(() => playTone(800, 'triangle', 0.3), 200);
+}
+function playSoundFail() {
+    playTone(300, 'sawtooth', 0.3, 100);
+    setTimeout(() => playTone(200, 'sawtooth', 0.4, 50), 300);
+}
+
+function toggleAudio() {
+    isAudioOn = !isAudioOn;
+    document.getElementById('btn-audio').innerHTML = isAudioOn ? "🔊" : "🔇";
+    if(isAudioOn) initAudio();
+}
+
+// --- FULLSCREEN ---
+function toggleFullScreen() {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => console.log(err));
+    } else {
+        if (document.exitFullscreen) document.exitFullscreen();
+    }
+}
+
+// --- GAME LOGIC ---
+function goHome() {
+    document.getElementById('game-ui').style.display = 'none';
+    document.getElementById('main-menu').style.display = 'flex';
+    document.getElementById('split-container').innerHTML = '';
+}
+
+function startGame(numPlayers) {
+    initAudio(); // Initialize audio on first user interaction
+    document.getElementById('main-menu').style.display = 'none';
+    const ui = document.getElementById('game-ui');
+    ui.style.display = 'flex';
+    
+    const container = document.getElementById('split-container');
+    container.className = 'split-container'; // reset
+    if(numPlayers === 1) container.classList.add('solo-mode');
+    if(numPlayers === 2) container.classList.add('duel-mode');
+    if(numPlayers === 3) container.classList.add('triple-mode');
+
+    container.innerHTML = '';
+    players = [];
+
+    const colors = ['bg-blue-100', 'bg-green-100', 'bg-yellow-100'];
+
+    for(let i=0; i<numPlayers; i++) {
+        players.push({
+            id: i,
+            score: 0,
+            level: 0,
+            isAnimating: false
+        });
+        
+        container.innerHTML += `
+            <div id="player-${i}" class="player-board ${colors[i]} relative">
+                <div class="rain"></div>
+                
+                <!-- Player Info -->
+                <div class="absolute top-2 left-2 right-2 flex justify-between items-center z-40 bg-white/80 p-2 rounded-lg shadow text-sm md:text-base">
+                    <span class="font-bold text-gray-800">Player ${i+1}</span>
+                    <span class="font-bold text-green-600">Skor: <span id="score-${i}">0</span></span>
+                    <span class="font-bold text-blue-600">Level: <span id="lvl-${i}">1</span>/10</span>
+                </div>
+
+                <!-- Message Box -->
+                <div id="msg-${i}" class="message-box glass-panel p-3">
+                    <p id="msg-text-${i}" class="font-bold text-lg text-green-700"></p>
+                </div>
+
+                <!-- Question -->
+                <div class="absolute top-16 left-1/2 transform -translate-x-1/2 w-11/12 z-30">
+                    <div class="glass-panel p-4 text-center">
+                        <p id="q-${i}" class="question-text font-bold text-gray-800 whitespace-pre-line"></p>
+                    </div>
+                </div>
+
+                <!-- Game Area (Leaves & Frog) -->
+                <div id="game-area-${i}" class="w-full h-full relative">
+                    <!-- Options -->
+                    <div id="options-container-${i}" class="options-grid">
+                        <div class="leaf-shape option-leaf text-sm md:text-base" onclick="selectAnswer(${i}, 0)" id="opt-${i}-0"></div>
+                        <div class="leaf-shape option-leaf text-sm md:text-base" onclick="selectAnswer(${i}, 1)" id="opt-${i}-1"></div>
+                        <div class="leaf-shape option-leaf text-sm md:text-base" onclick="selectAnswer(${i}, 2)" id="opt-${i}-2"></div>
+                        <div class="leaf-shape option-leaf text-sm md:text-base" onclick="selectAnswer(${i}, 3)" id="opt-${i}-3"></div>
+                    </div>
+
+                    <!-- Base Leaf -->
+                    <div class="leaf-shape leaf-base"></div>
+                    
+                    <!-- Frog -->
+                    <div id="frog-${i}" class="frog">🐸</div>
+
+                    <!-- Water -->
+                    <div class="water-area">
+                        <div class="water-wave"></div>
+                        <div id="ripple-${i}" class="ripple"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    // Initialize UI for all players
+    players.forEach(p => loadQuestion(p.id));
+}
+
+function loadQuestion(pId) {
+    const p = players[pId];
+    if (p.level >= questionsData.length) {
+        showFinish(pId);
+        return;
+    }
+
+    const qData = questionsData[p.level];
+    document.getElementById(`q-${pId}`).innerText = qData.q;
+    document.getElementById(`lvl-${pId}`).innerText = p.level + 1;
+    document.getElementById(`score-${pId}`).innerText = p.score;
+
+    for(let j=0; j<4; j++) {
+        document.getElementById(`opt-${pId}-${j}`).innerText = qData.opts[j];
+    }
+    
+    // Reset visuals
+    document.getElementById(`msg-${pId}`).style.display = 'none';
+    document.getElementById(`frog-${pId}`).innerText = "🐸";
+    document.getElementById(`frog-${pId}`).className = "frog";
+    document.getElementById(`player-${pId}`).classList.remove('rainy');
+    document.getElementById(`options-container-${pId}`).classList.remove('slide-down-screen');
+    document.getElementById(`options-container-${pId}`).classList.add('fade-in');
+    
+    p.isAnimating = false;
+}
+
+function selectAnswer(pId, optIndex) {
+    const p = players[pId];
+    if (p.isAnimating || p.level >= questionsData.length) return;
+    p.isAnimating = true;
+
+    const qData = questionsData[p.level];
+    const isCorrect = (optIndex === qData.ans);
+    const frog = document.getElementById(`frog-${pId}`);
+    const board = document.getElementById(`player-${pId}`);
+    const msgBox = document.getElementById(`msg-${pId}`);
+    const msgText = document.getElementById(`msg-text-${pId}`);
+
+    playSoundJump();
+
+    if (isCorrect) {
+        // BENAR
+        p.score += 10;
+        document.getElementById(`score-${pId}`).innerText = p.score;
+        frog.innerText = "😆";
+        frog.classList.add('jump-up');
+        
+        setTimeout(() => {
+            playSoundSuccess();
+            spawnHearts(pId);
+            msgText.innerText = qData.msg;
+            msgText.className = "font-bold text-lg text-green-700";
+            msgBox.style.display = 'block';
+            msgBox.classList.add('fade-in');
+            
+            // Animasi pindah daun (daun lama turun)
+            document.getElementById(`options-container-${pId}`).classList.remove('fade-in');
+            document.getElementById(`options-container-${pId}`).classList.add('slide-down-screen');
+            
+        }, 500);
+
+        setTimeout(() => {
+            p.level++;
+            loadQuestion(pId);
+        }, 2500);
+
+    } else {
+        // SALAH
+        frog.innerText = "😭";
+        frog.classList.add('fall-down');
+        
+        setTimeout(() => {
+            playSoundFail();
+            // Efek Air & Hujan
+            const ripple = document.getElementById(`ripple-${pId}`);
+            ripple.classList.remove('do-ripple');
+            void ripple.offsetWidth; // trigger reflow
+            ripple.classList.add('do-ripple');
+            
+            board.classList.add('rainy');
+            
+            msgText.innerText = "Yah, jawaban salah. Katak tercebur! Ayo coba lagi di soal berikutnya.";
+            msgText.className = "font-bold text-lg text-red-600";
+            msgBox.style.display = 'block';
+        }, 500);
+
+        setTimeout(() => {
+            // Meskipun salah, tetap lanjut sesuai instruksi
+            p.level++;
+            loadQuestion(pId);
+        }, 3000);
+    }
+}
+
+function spawnHearts(pId) {
+    const area = document.getElementById(`game-area-${pId}`);
+    for(let i=0; i<5; i++) {
+        const heart = document.createElement('div');
+        heart.innerText = "❤️";
+        heart.className = "particle";
+        heart.style.left = (40 + Math.random() * 20) + "%";
+        heart.style.bottom = "45%";
+        area.appendChild(heart);
+        setTimeout(() => heart.remove(), 1500);
+    }
+}
+
+function showFinish(pId) {
+    const p = players[pId];
+    const qBox = document.getElementById(`q-${pId}`);
+    const optCont = document.getElementById(`options-container-${pId}`);
+    const frog = document.getElementById(`frog-${pId}`);
+    const msgBox = document.getElementById(`msg-${pId}`);
+
+    qBox.innerText = "PERMAINAN SELESAI!";
+    optCont.innerHTML = `
+        <div class="col-span-2 text-center bg-white/90 p-6 rounded-xl shadow-xl mt-10">
+            <h2 class="text-3xl font-bold text-green-600 mb-2">Skor Akhir: ${p.score}</h2>
+            <p class="text-xl text-gray-700">🏆 Hebat! Kamu telah menyelesaikan petualangan ekosistem.</p>
+        </div>
+    `;
+    frog.innerText = "👑";
+    frog.style.transform = "translateX(-50%) scale(1.5)";
+    frog.style.bottom = "30%";
+    msgBox.style.display = 'none';
+    playSoundSuccess();
+    spawnHearts(pId);
+}
+</script>
+</body>
+</html>
